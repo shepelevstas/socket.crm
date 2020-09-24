@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM</title>
+  <link rel="stylesheet" href="static/css/style.css">
+  <script src="static/js/vue.js"></script>
+  <script src="static/js/vuex.js"></script>
+  <script src="static/js/crm.js"></script>
+</head>
+<body>
+  <h1>CRM</h1>
+
+  <div id="app"><vue-app></vue-app></div>
+
+
+
+
+  <!-- card -->
+  <template id="card-template">
+    <div class="card">
+      <div v-if='lead.state=="new"' class="card__tag" :style='{"background-color":bgc}'>
+        {{lead.state}}
+      </div>
+      <div class='labeled-row'>
+        <label>lead №</label>
+        <div>{{lead.id+1}}</div>
+      </div>
+      <div class='labeled-row'>
+        <label>name</label>
+        <div>{{lead.name}}</div>
+      </div>
+      <div class='labeled-row'>
+        <label>phone</label>
+        <div>{{lead.phone}}</div>
+      </div>
+      <div class='buttons'>
+        <button
+          class="btn btn_border btn_red"
+          @click='rem_lead'
+        >delete</button>
+        <button
+          v-if='lead.state=="new"'
+          class="btn btn_blue"
+          @click='approve_lead'
+        >approve</button>
+      </div>
+    </div>
+  </template>
+  <script>
+    const Card = {
+      template: '#card-template',
+      props: ['lead'],
+      computed: {
+        bgc(){
+          if (this.lead.state=='new') {return 'gold'}
+          return 'white'
+        }
+      },
+      methods: {
+        rem_lead(){
+          this.$store.dispatch('rem_lead', this.lead)
+        },
+        approve_lead(){
+          this.$store.dispatch('approve_lead', this.lead)
+        }
+      }
+    }
+  </script>
+
+
+
+  <!-- vue-app -->
+  <template id="app-template">
+    <div class="app">
+      <h2>Lead cards ({{total}})</h2>
+
+      <ul class='tabs'>
+        <li
+          v-for='item in states'
+          :key='item'
+          class='tabs__tab'
+          :class='{"tab_active":item==state}'
+          @click='state=item'
+        >
+          {{item}} ({{count(item)}})
+        </li>
+      </ul>
+
+      <transition name='step'>
+        <div
+          v-for='tab in tabs'
+          :key='tab.name'
+          v-if='tab.name==state'
+          class="cards-list"
+        >
+          <transition-group name='fadeup'>
+            <card-el
+              v-for='item in tab.leads'
+              :key='item.id'
+              :lead='item'
+            ></card-el>
+          </transition-group>
+        </div>
+      </transition>
+    </div>
+  </template>
+
+  <script>
+    const App = {
+      template: '#app-template',
+      components: {"card-el":Card},
+      data(){
+        return {
+          states: ['new', 'approved'],
+          state: 'new',
+        }
+      },
+      computed: {
+        total(){return this.$store.state.leads.length},
+        tabs(){
+          return this.states.map(state=>{
+            return {
+              name: state,
+              leads: this.$store.getters[state],
+            }
+          })
+        }
+      },
+      methods: {
+        count(state){
+          return this.$store.getters[state].length
+        }
+      }
+    }
+  </script>
+
+
+
+
+  <!-- app -->
+  <script>
+    const ws = Object.freeze(new WebSocket('ws://localhost:3000'))
+    const store = new Vuex.Store({
+      state: {
+        leads:[],
+        ws:null,
+      },
+      mutations: {
+        ADD_LEAD(state, lead) {
+          state.leads.push(lead)
+        },
+        LOAD_LEADS(state, leads){
+          state.leads = leads
+        },
+        REM_LEAD(state, lead){
+          state.leads = state.leads.filter(l=>l!=lead)
+        },
+        APPROVE_LEAD(state, lead){
+          lead.state = 'approved'
+        }
+      },
+      getters: {
+        new(state){
+          return state.leads.filter(l=>l.state=='new')
+        },
+        approved(state){
+          return state.leads.filter(l=>l.state=='approved')
+        }
+      },
+      actions: {
+        async connect(context){
+          context.state.ws = ws
+          ws.onopen = () => { ws.send('GET LEADS') }
+          ws.onmessage = e => {
+            const data = JSON.parse(e.data)
+            console.log('STORE.ACTIONS.CONNECT.ws.onmessage', e)
+            switch(data.msg){
+              case 'LEADS':
+                context.commit('LOAD_LEADS', data.data)
+                break
+              case 'LEAD':
+                context.commit('ADD_LEAD', data.data)
+                break
+                case 'REM_LEAD':
+                case 'APPROVE_LEAD':
+                const lead = context.state.leads.find(l=>l.id==data.data)
+                context.commit(data.msg, lead)
+                break
+              default:
+                console.log('msg from WSS:', e)
+            }
+          }
+        },
+        async rem_lead(context, lead){
+          if (context.state.ws){
+            context.state.ws.send('REM LEAD '+lead.id)
+          }
+        },
+        async approve_lead(context, lead){
+          if (context.state.ws){
+            context.state.ws.send('APPROVE LEAD '+lead.id)
+          }
+        }
+      }
+    })
+    ws.addEventListener('message', e=>{
+      console.log('WS MSG OUTSIDE STORE', e)
+      const data = JSON.parse(e.data)
+
+    })
+    const app = new Vue({
+      components: {"vue-app":App},
+      store,
+      mounted(){
+        this.$store.dispatch('connect')
+      },
+    }).$mount('#app')
+
+  </script>
+</body>
+</html>

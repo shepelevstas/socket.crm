@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Client Front</title>
+  <link rel="stylesheet" href="static/css/style.css">
+  <script src="static/js/vue.js"></script>
+  <script src="static/js/client.js"></script>
+</head>
+<body>
+  <h1>Contact Info</h1>
+
+  <div id="app">
+    <transition-group name='step'>
+    <!-- <transition name='step' mode='out-in'> -->
+      <div v-if='step==1' :key='"name"'>
+        <text-input
+          label='name'
+          :value="name"
+          :err='nameErr'
+          :key='"name"'
+          ref='name'
+        ></text-input>
+        <div>
+          <button class="btn btn_blue" @click='nextClick(2)'>next</button>
+        </div>
+      </div>
+    <!-- </transition> -->
+
+
+    <!-- <transition name='step' mode='out-in'> -->
+      <div v-if='step==2' :key='"phone"'>
+        <text-input
+          label='phone'
+          :value="phone"
+          :err='phoneErr'
+          :key='"phone"'
+          ref='phone'
+        ></text-input>
+        <div>
+          <button class='btn btn_blue' @click='nextClick(1,false)'>back</button>
+          <button class='btn btn_blue' @click='doneClick'>done</button>
+        </div>
+      </div>
+    <!-- </transition> -->
+
+
+    <!-- <transition name='step' mode='out-in'> -->
+      <div v-if='step=="done"' :key='"done"'>
+        <h4>Done!</h4>
+        <div>
+          <button class="btn btn_blue" @click='nextClick(1,false)'>go again!</button>
+        </div>
+      </div>
+    <!-- </transition> -->
+    </transition-group>
+  </div>
+
+
+
+
+  <!-- text-input -->
+  <template id='text-input-template'>
+    <div class='text-input' :class='{"text-input_error":errMsg}'>
+      <label class="text-input__label">
+        {{label}}
+      </label>
+      <input type="text" v-model='tmp'>
+      <span v-if='errMsg' class="text-input__error-msg">{{errMsg}}</span>
+    </div>
+  </template>
+  <script>
+    const Input = {
+      template: '#text-input-template',
+      props: ['label', 'value', 'err'],
+      data(){
+        return {
+          errMsg: "",
+          tmp: this.value,
+        }
+      },
+      watch: {
+        tmp(val,old){
+          if (this.err)
+            this.errMsg = this.err(val)
+          this.$emit('change', val)
+        }
+      },
+      computed: {
+        valid(){
+          if (!this.err) {return true}
+          this.errMsg = this.err(this.tmp)
+          return !Boolean(this.errMsg)
+        }
+      },
+    }
+  </script>
+
+
+
+
+  <!-- page -->
+  <template id="page-template">
+    <div class="main">
+      <slot></slot>
+      <div v-if='next||back' class='buttons'>
+        <button v-if='back' class="btn" @click='backClick'>back</button>
+        <button v-if='next' class="btn" @click='nextClick'>next</button>
+      </div>
+    </div>
+  </template>
+  <script>
+    const Page = {
+      template: '#page-template',
+      props: ['next', 'back'],
+      data(){return{}},
+      methods:{
+        backClick(){
+          this.$emit('back')
+        },
+        nextClick(){
+          this.$emit('next')
+        }
+      }
+    }
+  </script>
+
+
+
+
+  <!-- vue -->
+  <script>
+    const app = new Vue({
+      components: {
+        "text-input":Input,
+        "page-el":Page,
+      },
+      data(){
+        return {
+          step: 1,
+          name: "some name",
+          phone: "",
+        }
+      },
+      methods: {
+        nextClick(step, validate=true){
+          if (validate) {
+            const entries = Object.entries(this.$refs).filter(e=>e[1])
+            if (!this.allvalid(entries)) {return}
+            this.update(entries)
+          }
+          this.step = step
+        },
+        doneClick(){
+          const entries = Object.entries(this.$refs).filter(e=>e[1])
+          if (!this.allvalid(entries)) {return}
+          this.update(entries)
+          this.sendData()
+        },
+        allvalid(entries){
+          return entries.every(e=>e[1].valid)
+        },
+        update(entries){
+          entries.forEach(([name,vm])=>{
+            this[name] = vm.tmp
+          })
+        },
+        sendData(){
+          post('/api/leads/new', {
+            name: this.name,
+            phone: this.phone
+          }).then(res=>{
+            if (res.msg=='OK') {
+              this.name = ""
+              this.phone = ""
+              this.step = 'done'
+            } else {
+              console.log('res', res)
+            }
+          })
+        },
+
+        nameErr(name){
+          name = name.trim()
+          if (name.length<4) {return "too short"}
+          if (name.length>40) {return "too long"}
+          if (!/^[a-zA-Z '.-]+$/.test(name)) {return "incorrect"}
+          return ""
+        },
+
+        phoneErr(phone){
+          phone = phone.trim()
+          if (!phone.length) {return "enter phone"}
+          phone = phone.match(/\d*/g).join("")
+          if (phone.length<11) {return "too short"}
+          return ""
+        },
+      }
+    }).$mount('#app')
+  </script>
+</body>
+</html>
